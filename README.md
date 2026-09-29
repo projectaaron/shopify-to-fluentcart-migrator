@@ -26,7 +26,7 @@ Run `bin/build.sh` to produce `shopify-to-fluentcart-migrator.zip`, then upload 
 | Variant Packed Length / Width / Height | Dimensions in the variation's `other_info` |
 | Google Shopping / MPN | MPN per variation through Custom Meta Fields |
 | `product.metafields.*` columns | Kept in the product's `_s2fc_shopify_source` meta |
-| Type, Product Category (last segment) | `product-categories` terms |
+| Type, Product Category (last segment) or Tags | `product-categories` terms. An Import option picks the source (Type by default, or Product Category, Tags, both Type and Product Category, or none) and the review list shows the resulting categories per product before anything is written |
 | Vendor | `product-brands` term |
 | Tags | `product-tags` when that taxonomy exists, otherwise kept in post meta |
 | Status (active / draft / archived) | publish / draft / private, or everything as draft |

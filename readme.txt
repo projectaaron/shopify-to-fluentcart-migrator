@@ -24,7 +24,7 @@ Shopify to FluentCart Migrator brings your Shopify catalog into FluentCart in th
 * Variants with options, SKU, price, compare-at price, cost, weight, inventory, backorder policy, taxable and shipping flags
 * All product images into the Media Library, the first one as the featured image, the rest in the FluentCart gallery; variant images on their variations
 * Packed dimensions, MPN and Shopify metafields (kept on the product for later tools)
-* Shopify Type and Product Category as FluentCart product categories, Vendor as product brand, tags
+* Product categories from Shopify Type (default), Product Category, Tags, or both Type and Product Category, previewed per product before import; Vendor as product brand; tags
 * Shopify status (active, draft, archived), or import everything as draft to check first
 
 = Barcodes (GTIN, UPC, EAN, ISBN) =

@@ -93,6 +93,22 @@
     });
     updateCount();
 
+    /* Category column follows the "categories from" select. */
+    var catSelect = $('[data-s2fc-category-source]');
+    if (catSelect) {
+        catSelect.addEventListener('change', function () {
+            var source = catSelect.value;
+            rows.forEach(function (r) {
+                var cell = $('[data-s2fc-cats]', r);
+                if (!cell) { return; }
+                var map;
+                try { map = JSON.parse(cell.getAttribute('data-s2fc-cats') || '{}'); } catch (e) { map = {}; }
+                var names = map[source] || [];
+                cell.textContent = names.length ? names.join(', ') : '\u2014';
+            });
+        });
+    }
+
     function options() {
         var o = {};
         $$('select, input', optionsBox).forEach(function (el) {

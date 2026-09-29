@@ -363,7 +363,14 @@ class Admin
                         </select>
                     </label>
                     <label class="s2fc-check"><input type="checkbox" name="images" value="1" <?php checked($options['images']); ?>> <?php esc_html_e('Download images into the Media Library', 'shopify-to-fluentcart-migrator'); ?></label>
-                    <label class="s2fc-check"><input type="checkbox" name="categories" value="1" <?php checked($options['categories']); ?>> <?php esc_html_e('Create product categories from Shopify Type and Product Category', 'shopify-to-fluentcart-migrator'); ?></label>
+                    <label>
+                        <span><?php esc_html_e('Create FluentCart product categories from', 'shopify-to-fluentcart-migrator'); ?></span>
+                        <select name="category_source" data-s2fc-category-source>
+                            <?php foreach (Importer::category_sources() as $key => $label) : ?>
+                                <option value="<?php echo esc_attr($key); ?>" <?php selected($options['category_source'], $key); ?>><?php echo esc_html($label); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
                     <label class="s2fc-check"><input type="checkbox" name="vendor" value="1" <?php checked($options['vendor']); ?>> <?php esc_html_e('Create product brands from Shopify Vendor', 'shopify-to-fluentcart-migrator'); ?></label>
                     <label class="s2fc-check"><input type="checkbox" name="tags" value="1" <?php checked($options['tags']); ?>> <?php esc_html_e('Import tags', 'shopify-to-fluentcart-migrator'); ?></label>
                     <label class="s2fc-check"><input type="checkbox" name="skip_done" value="1" <?php checked($options['skip_done']); ?>> <?php esc_html_e('Skip products already imported from this Shopify handle', 'shopify-to-fluentcart-migrator'); ?></label>
@@ -393,13 +400,14 @@ class Admin
                             <th><?php esc_html_e('Variants', 'shopify-to-fluentcart-migrator'); ?></th>
                             <th><?php esc_html_e('Price', 'shopify-to-fluentcart-migrator'); ?></th>
                             <th><?php esc_html_e('Stock', 'shopify-to-fluentcart-migrator'); ?></th>
+                            <th><?php esc_html_e('Categories', 'shopify-to-fluentcart-migrator'); ?></th>
                             <th><?php esc_html_e('Shopify status', 'shopify-to-fluentcart-migrator'); ?></th>
                             <th><?php esc_html_e('Notes', 'shopify-to-fluentcart-migrator'); ?></th>
                             <th><?php esc_html_e('Result', 'shopify-to-fluentcart-migrator'); ?></th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($products as $i => $p) : $this->row($i, $p, $results[$i] ?? null, $sku_clash, $gtin_state, (int) ($existing[$p['handle']] ?? 0)); endforeach; ?>
+                        <?php foreach ($products as $i => $p) : $this->row($i, $p, $results[$i] ?? null, $sku_clash, $gtin_state, (int) ($existing[$p['handle']] ?? 0), $options['category_source']); endforeach; ?>
                     </tbody>
                 </table>
             </div>
@@ -407,8 +415,12 @@ class Admin
         <?php
     }
 
-    private function row(int $i, array $p, $result, array $sku_clash, string $gtin_state, int $existing): void
+    private function row(int $i, array $p, $result, array $sku_clash, string $gtin_state, int $existing, string $category_source): void
     {
+        $category_options = [];
+        foreach (array_keys(Importer::category_sources()) as $source) {
+            $category_options[$source] = Importer::categories_for($p, $source);
+        }
         $notes    = [];
         $flags    = [];
 
@@ -508,6 +520,7 @@ class Admin
             <td><?php echo $variant_text; // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
             <td class="s2fc-nowrap"><?php echo esc_html($price); ?></td>
             <td><?php echo $stock; // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
+            <td class="s2fc-small s2fc-cats" data-s2fc-cats="<?php echo esc_attr(wp_json_encode($category_options)); ?>"><?php echo esc_html(implode(', ', $category_options[$category_source]) ?: '—'); ?></td>
             <td><span class="s2fc-pill s2fc-pill--<?php echo esc_attr($p['status']); ?>"><?php echo esc_html($status_label); ?></span></td>
             <td class="s2fc-small s2fc-notes"><?php echo wp_kses_post(implode('<br>', $notes)); ?></td>
             <td class="s2fc-result" data-s2fc-result>

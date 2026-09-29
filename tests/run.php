@@ -19,9 +19,13 @@ function sanitize_title($s) { $s = strtolower(trim($s)); $s = preg_replace('/[^a
 function sanitize_text_field($s) { return trim(strip_tags((string) $s)); }
 function esc_url_raw($s) { return trim((string) $s); }
 function wp_kses_post($s) { return (string) $s; }
+function class_exists_stub() {}
+function apply_filters($tag, $value) { return $value; }
+function do_action() {}
 
 require __DIR__ . '/../includes/class-helpers.php';
 require __DIR__ . '/../includes/class-csv-parser.php';
+require __DIR__ . '/../includes/class-importer.php';
 
 $result = \S2FC\Csv_Parser::parse_file(__DIR__ . '/sample-export.csv');
 if (is_wp_error($result)) {
@@ -81,6 +85,16 @@ $g = $p['gift-card'];
 check('gift card flagged', $g['gift_card'] === true);
 check('archived', $g['status'] === 'archived');
 check('title fallback not needed', $g['title'] === 'Gift Card');
+
+$cf = function ($src) use ($w) { return \S2FC\Importer::categories_for($w, $src); };
+check('categories: type', $cf('type') === ['Books']);
+check('categories: product category leaf', $cf('category') === ['Books']);
+check('categories: tags', $cf('tags') === ['devotional', 'wives']);
+check('categories: type + category dedupes', $cf('type_category') === ['Books']);
+check('categories: both when different', \S2FC\Importer::categories_for($o, 'type_category') === ['Prints', 'Artwork']);
+check('categories: none', $cf('none') === []);
+check('option: legacy categories=0 maps to none', \S2FC\Importer::sanitize_options(['categories' => 0])['category_source'] === 'none');
+check('option: bad source falls back to type', \S2FC\Importer::sanitize_options(['category_source' => 'x'])['category_source'] === 'type');
 
 echo $fail ? "\n$fail check(s) failed\n" : "\nAll checks passed\n";
 exit($fail ? 1 : 0);

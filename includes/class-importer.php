@@ -25,12 +25,55 @@ class Importer
         return [
             'status'      => 'draft',   // draft | shopify | publish
             'images'      => 1,
-            'categories'  => 1,
+            'category_source' => 'type', // type | category | tags | type_category | none
             'tags'        => 1,
             'vendor'      => 1,
             'weight_unit' => self::store_weight_unit(),
             'skip_done'   => 1,
         ];
+    }
+
+    /** Where FluentCart product categories can come from, with labels for the screen. */
+    public static function category_sources(): array
+    {
+        return [
+            'type'          => __('Shopify Type (e.g. "Book", "Prints")', 'shopify-to-fluentcart-migrator'),
+            'category'      => __('Shopify Product Category, last part (e.g. "Media > Books" → "Books")', 'shopify-to-fluentcart-migrator'),
+            'tags'          => __('Shopify Tags (one category per tag)', 'shopify-to-fluentcart-migrator'),
+            'type_category' => __('Both Type and Product Category', 'shopify-to-fluentcart-migrator'),
+            'none'          => __('None, I will set categories in FluentCart', 'shopify-to-fluentcart-migrator'),
+        ];
+    }
+
+    /** The category names one product would get under a source. */
+    public static function categories_for(array $product, string $source): array
+    {
+        $type = trim((string) ($product['type'] ?? ''));
+        $leaf = '';
+        if (!empty($product['category'])) {
+            $parts = array_map('trim', explode('>', (string) $product['category']));
+            $leaf  = (string) end($parts);
+        }
+        switch ($source) {
+            case 'type':
+                $names = [$type];
+                break;
+            case 'category':
+                $names = [$leaf];
+                break;
+            case 'tags':
+                $names = (array) ($product['tags'] ?? []);
+                break;
+            case 'type_category':
+                $names = [$type];
+                if ($leaf !== '' && strcasecmp($leaf, $type) !== 0) {
+                    $names[] = $leaf;
+                }
+                break;
+            default:
+                $names = [];
+        }
+        return array_values(array_unique(array_filter(array_map('trim', $names), 'strlen')));
     }
 
     /** The unit FluentCart's own store settings use, falling back to oz. */
@@ -56,8 +99,14 @@ class Importer
         if (isset($in['status']) && in_array($in['status'], ['draft', 'shopify', 'publish'], true)) {
             $o['status'] = $in['status'];
         }
-        foreach (['images', 'categories', 'tags', 'vendor', 'skip_done'] as $flag) {
+        foreach (['images', 'tags', 'vendor', 'skip_done'] as $flag) {
             $o[$flag] = !empty($in[$flag]) ? 1 : 0;
+        }
+        if (isset($in['category_source']) && isset(self::category_sources()[$in['category_source']])) {
+            $o['category_source'] = $in['category_source'];
+        } elseif (array_key_exists('categories', $in)) {
+            // Option shape from 1.0.0.
+            $o['category_source'] = !empty($in['categories']) ? 'type' : 'none';
         }
         if (isset($in['weight_unit']) && in_array($in['weight_unit'], ['g', 'kg', 'oz', 'lb'], true)) {
             $o['weight_unit'] = $in['weight_unit'];
@@ -313,18 +362,8 @@ class Importer
         }
 
         // ── Taxonomies ──
-        if ($options['categories']) {
-            $cats = [];
-            if ($product['type'] !== '') {
-                $cats[] = $product['type'];
-            }
-            if ($product['category'] !== '') {
-                $parts = array_map('trim', explode('>', $product['category']));
-                $leaf  = end($parts);
-                if ($leaf && strcasecmp($leaf, $product['type']) !== 0) {
-                    $cats[] = $leaf;
-                }
-            }
+        $cats = self::categories_for($product, $options['category_source']);
+        if ($cats) {
             self::assign_terms($post_id, Helpers::CATEGORY_TAX, $cats, $warnings);
         }
         if ($options['vendor'] && $product['vendor'] !== '') {

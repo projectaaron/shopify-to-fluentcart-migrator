@@ -161,6 +161,7 @@ html.dark .s2fc-app {
 .s2fc-noimg { display: block; width: 44px; height: 44px; border-radius: 6px; border: 1px dashed var(--s2fc-border); }
 .s2fc-flags { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
 .s2fc-notes { max-width: 260px; color: var(--s2fc-text-soft); }
+.s2fc-cats { max-width: 200px; color: var(--s2fc-text-soft); }
 .s2fc-result { min-width: 130px; }
 
 /* Pills */

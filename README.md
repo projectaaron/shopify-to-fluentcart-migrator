@@ -1,0 +1,66 @@
+# Shopify to FluentCart Migrator
+
+A free, lightweight WordPress plugin that moves a Shopify product catalog into [FluentCart](https://fluentcart.com/?by=272).
+
+**Three steps:** export the CSV from Shopify → upload it → review the list and publish.
+
+Nothing is written to the store until the review screen, where every product is listed with its image, variants, price range, stock, Shopify status and any notes (barcode present, SKU already exists, no images, already imported). Untick what you don't want, set the options, import. Each product goes in its own request with a progress bar, so a large catalog never hits a PHP time limit, and the page can be reloaded mid-way without losing the results.
+
+## Install
+
+Run `bin/build.sh` to produce `shopify-to-fluentcart-migrator.zip`, then upload it through **Plugins → Add New → Upload**. FluentCart must be active. The screen is at **FluentCart → Shopify Migrator** (also in FluentCart's own sidebar under *More*).
+
+## What is migrated
+
+| Shopify | FluentCart |
+|---|---|
+| Title, Body (HTML), Handle | Product title, description, slug |
+| SEO Title / SEO Description | Short description; Rank Math or Yoast meta when either is active |
+| Variants (Option1–3), Variant SKU, Price, Compare At Price, Cost per item | One `fct_product_variations` row per variant (`simple` when the only variant is *Default Title*, `simple_variations` otherwise) |
+| Variant Grams | Weight in the unit you pick (oz, lb, g, kg) |
+| Variant Inventory Tracker / Qty / Policy | `manage_stock`, `total_stock`, `available`, `backorders`, stock status |
+| Variant Requires Shipping | Physical or digital fulfillment |
+| Variant Taxable | Tax exempt flag |
+| Image Src / Image Position / Image Alt Text | Media Library attachments; first is the featured image, all go into the FluentCart gallery |
+| Type, Product Category (last segment) | `product-categories` terms |
+| Vendor | `product-brands` term |
+| Tags | `product-tags` when that taxonomy exists, otherwise kept in post meta |
+| Status (active / draft / archived) | publish / draft / private, or everything as draft |
+| Variant Barcode | GTIN per variation through Custom Meta Fields for FluentCart (see below) |
+
+Every imported product also carries `_s2fc_shopify_handle` and `_s2fc_shopify_source` (the original handle, vendor, tags, per-variant SKU and barcode, image URLs) so later tools can find what came from where.
+
+### Barcodes
+
+FluentCart has no GTIN field and Shopify's *Variant Barcode* is exactly that. The review screen counts the products that have one and, if [Custom Meta Fields for FluentCart](https://wordpress.org/plugins/custom-meta-fields-for-fluentcart/) is not active, shows a one-click install link. With it active, each barcode is validated (check digit, ISBN-10 → GTIN-13) and saved on its variation, where it is emitted as `gtin` in the product's JSON-LD.
+
+### Not migrated
+
+Orders, customers, discount codes, collections (categories are built from *Type* instead), metafields, subscription products, variant-level images (the product gallery gets them all).
+
+## How it writes to FluentCart
+
+FluentCart has no public "create product" PHP API, so the importer writes the rows its own REST controller would write: the `fluent-products` post, one `fct_product_details` row, one `fct_product_variations` row per variant (prices in cents, `other_info` JSON with weight, tax and bundle keys), the `fluent-products-gallery-image` meta and `_thumbnail_id`. Verified against FluentCart 1.6.x. Two filters let you adjust the rows before they are inserted:
+
+```php
+add_filter('s2fc_variation_row', function (array $row, array $variant, array $product, array $options) {
+    $row['shipping_class'] = 3;
+    return $row;
+}, 10, 4);
+
+add_filter('s2fc_detail_row', function (array $row, array $product, array $options) { return $row; }, 10, 3);
+add_action('s2fc_product_imported', function (int $post_id, array $product, array $variation_ids, array $options) {}, 10, 4);
+add_filter('s2fc_promos', function (array $items) { return $items; });
+```
+
+## Development
+
+Plain PHP and vanilla JavaScript, no build step. `includes/class-csv-parser.php` turns the export into one array per product; `includes/class-importer.php` writes it; `includes/class-admin.php` renders the screen; `includes/class-ajax.php` handles the upload and the per-product import requests. `tests/run.php` runs the parser against a sample export without WordPress:
+
+```
+php tests/run.php
+```
+
+## License
+
+GPLv2 or later. Built by [upfluent.io](https://upfluent.io). Not affiliated with WPManageNinja or Shopify.

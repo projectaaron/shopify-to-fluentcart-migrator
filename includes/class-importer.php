@@ -519,7 +519,15 @@ class Importer
         }
     }
 
-    /** @return int|WP_Error attachment ID */
+    /**
+     * Download a Shopify CDN image into the Media Library.
+     *
+     * Shopify's CDN can hold HEIC, TIFF or extension-less files that
+     * WordPress will not accept; those are requested as JPEG through the
+     * CDN's own format parameter, so every image comes across.
+     *
+     * @return int|WP_Error attachment ID
+     */
     private static function sideload(string $url, int $post_id, string $alt)
     {
         if (isset(self::$image_cache[$url])) {
@@ -535,8 +543,22 @@ class Importer
         require_once ABSPATH . 'wp-admin/includes/file.php';
         require_once ABSPATH . 'wp-admin/includes/image.php';
 
-        $id = media_sideload_image($url, $post_id, $alt, 'id');
+        $path = (string) wp_parse_url($url, PHP_URL_PATH);
+        $name = sanitize_file_name(wp_basename($path)) ?: 'image';
+        $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        $fetch = $url;
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'], true)) {
+            $fetch = add_query_arg('format', 'jpg', $url);
+            $name  = ($ext ? substr($name, 0, -strlen($ext) - 1) : $name) . '.jpg';
+        }
+
+        $tmp = download_url($fetch, 60);
+        if (is_wp_error($tmp)) {
+            return $tmp;
+        }
+        $id = media_handle_sideload(['name' => $name, 'tmp_name' => $tmp], $post_id, $alt);
         if (is_wp_error($id)) {
+            @unlink($tmp);
             return $id;
         }
         $id = (int) $id;

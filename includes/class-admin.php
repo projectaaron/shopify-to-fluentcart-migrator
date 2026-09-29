@@ -285,9 +285,19 @@ class Admin
                 <div class="s2fc-stat"><span class="s2fc-stat__n"><?php echo esc_html(number_format_i18n((int) $session['products'])); ?></span><span><?php esc_html_e('products', 'shopify-to-fluentcart-migrator'); ?></span></div>
                 <div class="s2fc-stat"><span class="s2fc-stat__n"><?php echo esc_html(number_format_i18n((int) $session['variants'])); ?></span><span><?php esc_html_e('variants', 'shopify-to-fluentcart-migrator'); ?></span></div>
                 <div class="s2fc-stat"><span class="s2fc-stat__n"><?php echo esc_html(number_format_i18n((int) $session['images'])); ?></span><span><?php esc_html_e('images', 'shopify-to-fluentcart-migrator'); ?></span></div>
+                <?php if (!empty($session['variant_images'])) : ?>
+                    <div class="s2fc-stat"><span class="s2fc-stat__n"><?php echo esc_html(number_format_i18n((int) $session['variant_images'])); ?></span><span><?php esc_html_e('variant images', 'shopify-to-fluentcart-migrator'); ?></span></div>
+                <?php endif; ?>
                 <div class="s2fc-stat"><span class="s2fc-stat__n"><?php echo esc_html(number_format_i18n($gtin_products)); ?></span><span><?php esc_html_e('with barcodes (GTIN)', 'shopify-to-fluentcart-migrator'); ?></span></div>
                 <div class="s2fc-stat s2fc-stat--file"><span class="s2fc-muted"><?php echo esc_html($session['source_name'] ?? ''); ?></span></div>
             </div>
+
+            <?php if (empty($session['has_qty'])) : ?>
+                <div class="s2fc-notice s2fc-notice--info">
+                    <strong><?php esc_html_e('This export has no inventory quantities.', 'shopify-to-fluentcart-migrator'); ?></strong>
+                    <?php esc_html_e('Newer Shopify exports leave the "Variant Inventory Qty" column out. Products are imported with stock management off, so they can be bought right away. Set quantities in FluentCart afterwards, or use FluentCart\'s inventory screen.', 'shopify-to-fluentcart-migrator'); ?>
+                </div>
+            <?php endif; ?>
 
             <?php if ($gtin_products > 0) : ?>
                 <?php if ($gtin_state === 'active') : ?>
@@ -402,6 +412,19 @@ class Admin
         $notes    = [];
         $flags    = [];
 
+        $bad_codes = [];
+        foreach ($p['variants'] as $v) {
+            if ($v['barcode'] !== '' && !preg_match('/^(\d{8}|\d{12,14}|\d{9}[\dX])$/i', $v['barcode'])) {
+                $bad_codes[] = $v['barcode'];
+            }
+        }
+        if ($bad_codes) {
+            $notes[] = esc_html(sprintf(
+                /* translators: %s: barcode list */
+                _n('Barcode %s is not a valid GTIN and will be kept only in the hidden source note.', 'Barcodes %s are not valid GTINs and will be kept only in the hidden source note.', count($bad_codes), 'shopify-to-fluentcart-migrator'),
+                implode(', ', $bad_codes)
+            ));
+        }
         if ($p['gtin_count'] > 0) {
             $flags[] = $gtin_state === 'active'
                 ? '<span class="s2fc-pill s2fc-pill--good" title="' . esc_attr__('Barcodes will be saved as GTINs', 'shopify-to-fluentcart-migrator') . '">GTIN</span>'

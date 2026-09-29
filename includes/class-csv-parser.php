@@ -55,6 +55,17 @@ class Csv_Parser
         'weight_unit'     => 'Variant Weight Unit',
         'cost'            => 'Cost per item',
         'status'          => 'Status',
+        'mpn'             => 'Google Shopping / MPN',
+        'length'          => 'Variant Packed Length',
+        'width'           => 'Variant Packed Width',
+        'height'          => 'Variant Packed Height',
+        'dimension_unit'  => 'Variant Packed Dimension Unit',
+    ];
+
+    /** Older and newer exports name a few columns differently. */
+    const ALIASES = [
+        'barcode' => ['Variant Barcodes', 'Barcode', 'Variant GTIN', 'GTIN'],
+        'qty'     => ['Variant Inventory Quantity', 'Inventory Qty', 'Inventory Quantity'],
     ];
 
     /**
@@ -92,6 +103,7 @@ class Csv_Parser
         $products = [];
         $order    = [];
         $rows     = 0;
+        $has_qty  = isset($map['qty']);
 
         while (($row = fgetcsv($fh, 0, ',', '"', '')) !== false) {
             $rows++;
@@ -117,6 +129,11 @@ class Csv_Parser
                 $order[] = $handle;
             }
             $p = &$products[$handle];
+            foreach ($r['metafields'] as $mkey => $mval) {
+                if (!isset($p['metafields'][$mkey])) {
+                    $p['metafields'][$mkey] = $mval;
+                }
+            }
 
             // Later rows of the same handle sometimes carry product columns
             // Shopify left blank on the first; fill any blanks.
@@ -156,13 +173,18 @@ class Csv_Parser
         }
 
         $list    = [];
-        $summary = ['products' => 0, 'variants' => 0, 'images' => 0, 'gtin_products' => 0, 'gtin_variants' => 0, 'rows' => $rows];
+        $summary = ['products' => 0, 'variants' => 0, 'images' => 0, 'gtin_products' => 0, 'gtin_variants' => 0, 'rows' => $rows, 'has_qty' => $has_qty, 'variant_images' => 0];
         foreach ($order as $handle) {
             $product = self::finish_product($products[$handle]);
             $list[]  = $product;
             $summary['products']++;
             $summary['variants'] += count($product['variants']);
             $summary['images']   += count($product['images']);
+            foreach ($product['variants'] as $v) {
+                if ($v['image'] !== '') {
+                    $summary['variant_images']++;
+                }
+            }
             if ($product['gtin_count'] > 0) {
                 $summary['gtin_products']++;
                 $summary['gtin_variants'] += $product['gtin_count'];
@@ -184,6 +206,19 @@ class Csv_Parser
             $n = self::norm($label);
             if (isset($norm[$n])) {
                 $map[$key] = $norm[$n];
+                continue;
+            }
+            foreach (self::ALIASES[$key] ?? [] as $alias) {
+                if (isset($norm[self::norm($alias)])) {
+                    $map[$key] = $norm[self::norm($alias)];
+                    break;
+                }
+            }
+        }
+        // Shopify metafield columns look like "Label (product.metafields.namespace.key)".
+        foreach ($header as $i => $name) {
+            if (preg_match('/\(product\.metafields\.([a-z0-9_\-]+\.[a-z0-9_\-]+)\)\s*$/i', (string) $name, $m)) {
+                $map['metafields'][$m[1]] = $i;
             }
         }
         return $map;
@@ -199,6 +234,12 @@ class Csv_Parser
         $r = [];
         foreach (self::COLUMNS as $key => $label) {
             $r[$key] = isset($map[$key], $row[$map[$key]]) ? trim((string) $row[$map[$key]]) : '';
+        }
+        $r['metafields'] = [];
+        foreach ($map['metafields'] ?? [] as $mkey => $i) {
+            if (isset($row[$i]) && trim((string) $row[$i]) !== '') {
+                $r['metafields'][$mkey] = trim((string) $row[$i]);
+            }
         }
         return $r;
     }
@@ -223,6 +264,7 @@ class Csv_Parser
             'options'      => [],
             'variants'     => [],
             'images'       => [],
+            'metafields'   => [],
             '_image_index' => [],
         ];
     }
@@ -232,14 +274,15 @@ class Csv_Parser
         $values = array_values(array_filter([$r['opt1_value'], $r['opt2_value'], $r['opt3_value']], function ($v) {
             return $v !== '';
         }));
-        $barcode = preg_replace('/[\s\-]/', '', $r['barcode']);
+        // Shopify prefixes numeric barcodes with an apostrophe so spreadsheets keep the digits.
+        $barcode = preg_replace('/[\s\-\'"’]/u', '', $r['barcode']);
 
         return [
             'options'          => array_map('sanitize_text_field', $values),
             'sku'              => sanitize_text_field($r['sku']),
             'grams'            => (float) $r['grams'],
             'weight_unit'      => strtolower($r['weight_unit']),
-            'tracked'          => strtolower($r['tracker']) === 'shopify',
+            'tracked'          => strtolower($r['tracker']) === 'shopify' && $r['qty'] !== '',
             'qty'              => (int) $r['qty'],
             'continue_selling' => strtolower($r['policy']) === 'continue',
             'price'            => Helpers::to_cents($r['price']),
@@ -248,7 +291,12 @@ class Csv_Parser
             'requires_shipping'=> $r['shipping'] === '' ? true : Helpers::truthy($r['shipping']),
             'taxable'          => $r['taxable'] === '' ? true : Helpers::truthy($r['taxable']),
             'barcode'          => sanitize_text_field($barcode),
+            'mpn'              => sanitize_text_field($r['mpn']),
             'image'            => esc_url_raw($r['variant_image']),
+            'length'           => $r['length'] !== '' ? (float) $r['length'] : null,
+            'width'            => $r['width'] !== '' ? (float) $r['width'] : null,
+            'height'           => $r['height'] !== '' ? (float) $r['height'] : null,
+            'dimension_unit'   => strtolower($r['dimension_unit']),
         ];
     }
 
@@ -321,6 +369,7 @@ class Csv_Parser
             'price_max'       => $prices ? max($prices) : 0,
             'stock'           => $stock,
             'fulfillment'     => $all_digital ? 'digital' : 'physical',
+            'metafields'      => $p['metafields'],
         ];
     }
 }

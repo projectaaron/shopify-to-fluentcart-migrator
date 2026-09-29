@@ -128,6 +128,7 @@
         if (r.message) { notes.push(r.message); }
         if (r.warnings && r.warnings.length) { notes = notes.concat(r.warnings); }
         if (r.gtin && r.gtin.saved) { notes.push('GTIN ×' + r.gtin.saved); }
+        if (r.variant_images) { notes.push('Variant images ×' + r.variant_images); }
         if (notes.length) {
             html += '<div class="s2fc-small s2fc-muted">' + escapeHtml(notes.join(' ')) + '</div>';
         }

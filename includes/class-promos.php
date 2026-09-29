@@ -58,14 +58,6 @@ class Promos
                 'icon'   => 'trend',
             ],
             [
-                'id'     => 'google',
-                'title'  => 'Google for FluentCart',
-                'text'   => __('Merchant Center product feed and Google Analytics 4 e-commerce events.', 'shopify-to-fluentcart-migrator'),
-                'url'    => 'https://upfluent.io/',
-                'status' => 'soon',
-                'icon'   => 'globe',
-            ],
-            [
                 'id'     => 'shipfusion',
                 'title'  => 'ShipFusion for FluentCart',
                 'text'   => __('Send orders to ShipFusion for fulfillment and sync tracking and stock back.', 'shopify-to-fluentcart-migrator'),

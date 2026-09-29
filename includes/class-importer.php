@@ -28,9 +28,26 @@ class Importer
             'categories'  => 1,
             'tags'        => 1,
             'vendor'      => 1,
-            'weight_unit' => 'oz',
+            'weight_unit' => self::store_weight_unit(),
             'skip_done'   => 1,
         ];
+    }
+
+    /** The unit FluentCart's own store settings use, falling back to oz. */
+    public static function store_weight_unit(): string
+    {
+        $helper = '\\FluentCart\\App\\Helpers\\Helper';
+        if (class_exists($helper) && method_exists($helper, 'shopConfig')) {
+            try {
+                $unit = (string) call_user_func([$helper, 'shopConfig'], 'weight_unit');
+                if (in_array($unit, ['g', 'kg', 'oz', 'lb'], true)) {
+                    return $unit;
+                }
+            } catch (\Throwable $e) {
+                // fall through
+            }
+        }
+        return 'oz';
     }
 
     public static function sanitize_options(array $in): array
@@ -160,6 +177,7 @@ class Importer
         $existing_skus = self::existing_skus(array_column($product['variants'], 'sku'));
         $seen_skus     = [];
         $variation_ids = [];
+        $variant_images = [];
         $gtin_rows     = [];
         $any_managed   = false;
         $any_in_stock  = false;
@@ -189,25 +207,28 @@ class Importer
 
             $weight = $v['grams'] > 0 ? Helpers::convert_grams((float) $v['grams'], $options['weight_unit']) : null;
 
+            $dim_unit = in_array($v['dimension_unit'] ?? '', ['in', 'cm', 'mm', 'm'], true) ? $v['dimension_unit'] : 'in';
             $other_info = [
                 'description'       => '',
                 'payment_type'      => 'onetime',
                 'package_slug'      => null,
                 'weight'            => $weight,
                 'weight_unit'       => $options['weight_unit'],
-                'length'            => null,
-                'width'             => null,
-                'height'            => null,
-                'dimension_unit'    => 'in',
+                'length'            => $v['length'] ?? null,
+                'width'             => $v['width'] ?? null,
+                'height'            => $v['height'] ?? null,
+                'dimension_unit'    => $dim_unit,
                 'tax_class'         => null,
                 'tax_exempt'        => $v['taxable'] ? 'no' : 'yes',
                 'is_bundle_product' => 'no',
                 'bundle_child_ids'  => [],
                 'shopify'           => [
                     'barcode' => $v['barcode'],
+                    'mpn'     => $v['mpn'] ?? '',
                     'options' => $v['options'],
                 ],
             ];
+            $variant_fulfillment = $v['requires_shipping'] ? 'physical' : 'digital';
 
             $row = [
                 'post_id'              => $post_id,
@@ -229,11 +250,11 @@ class Importer
                 'committed'            => 0,
                 'sold_individually'    => 0,
                 'payment_type'         => 'onetime',
-                'fulfillment_type'     => $v['requires_shipping'] ? 'physical' : $fulfillment,
+                'fulfillment_type'     => $variant_fulfillment,
                 'item_status'          => 'active',
                 'other_info'           => wp_json_encode($other_info),
                 'shipping_class'       => null,
-                'downloadable'         => 'false',
+                'downloadable'         => $variant_fulfillment === 'digital' ? 'true' : 'false',
                 'created_at'           => $now,
                 'updated_at'           => $now,
             ];
@@ -252,8 +273,11 @@ class Importer
             }
             $vid = (int) $wpdb->insert_id;
             $variation_ids[] = $vid;
-            if ($v['barcode'] !== '') {
-                $gtin_rows[] = ['variation_id' => $vid, 'gtin' => $v['barcode']];
+            if ($v['barcode'] !== '' || ($v['mpn'] ?? '') !== '') {
+                $gtin_rows[] = ['variation_id' => $vid, 'gtin' => $v['barcode'], 'mpn' => $v['mpn'] ?? ''];
+            }
+            if ($options['images'] && $v['image'] !== '' && !$product['is_simple']) {
+                $variant_images[$vid] = ['url' => $v['image'], 'title' => $v['title']];
             }
         }
 
@@ -272,10 +296,10 @@ class Importer
             'min_price'           => $prices ? (int) min($prices) : 0,
             'max_price'           => $prices ? (int) max($prices) : 0,
             'default_media'       => null,
-            'other_info'          => wp_json_encode(['is_bundle_product' => 'no']),
-            'default_variation_id'=> $product['is_simple'] ? $variation_ids[0] : null,
+            'other_info'          => wp_json_encode(['group_pricing_by' => 'payment_type', 'use_pricing_table' => 'no']),
+            'default_variation_id'=> $variation_ids[0],
             'manage_stock'        => $any_managed ? '1' : '0',
-            'manage_downloadable' => '0',
+            'manage_downloadable' => $fulfillment === 'digital' ? '1' : '0',
             'created_at'          => $now,
             'updated_at'          => $now,
         ];
@@ -342,6 +366,24 @@ class Importer
             }
         }
 
+        // Variant images: the variation's media_id plus the product_thumbnail
+        // meta row FluentCart's admin and cart read (same as its Woo migrator).
+        $variant_image_count = 0;
+        foreach ($variant_images as $vid => $img) {
+            $att_id = self::sideload($img['url'], $post_id, $img['title']);
+            if (is_wp_error($att_id)) {
+                $warnings[] = sprintf(
+                    /* translators: 1: variant title, 2: error */
+                    __('Variant image for "%1$s" could not be downloaded: %2$s', 'shopify-to-fluentcart-migrator'),
+                    $img['title'],
+                    $att_id->get_error_message()
+                );
+                continue;
+            }
+            self::set_variation_image($vid, $att_id, $img['title']);
+            $variant_image_count++;
+        }
+
         // ── SEO (only when a known SEO plugin is present) ──
         if ($product['seo_title'] !== '' || $product['excerpt'] !== '') {
             if (defined('RANK_MATH_VERSION')) {
@@ -384,6 +426,7 @@ class Importer
                 return ['variation_id' => $vid, 'sku' => $v['sku'], 'barcode' => $v['barcode'], 'options' => $v['options']];
             }, array_slice($product['variants'], 0, count($variation_ids)), $variation_ids),
             'images'      => array_column($product['images'], 'src'),
+            'metafields'  => $product['metafields'] ?? [],
             'imported_at' => time(),
             'migrator'    => S2FC_VERSION,
         ]);
@@ -397,8 +440,43 @@ class Importer
             'warnings' => $warnings,
             'gtin'     => $gtin,
             'images'   => $image_count,
+            'variant_images' => $variant_image_count,
             'variants' => count($variation_ids),
         ];
+    }
+
+    /** Attach an image to one variation the way FluentCart stores it. */
+    public static function set_variation_image(int $variation_id, int $attachment_id, string $title): void
+    {
+        global $wpdb;
+        $now   = current_time('mysql', true);
+        $media = [[
+            'id'    => $attachment_id,
+            'title' => get_the_title($attachment_id) ?: $title,
+            'url'   => wp_get_attachment_url($attachment_id),
+        ]];
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $wpdb->update($wpdb->prefix . 'fct_product_variations', ['media_id' => $attachment_id, 'updated_at' => $now], ['id' => $variation_id]);
+
+        $table = $wpdb->prefix . 'fct_product_meta';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE object_id = %d AND object_type = 'product_variant_info' AND meta_key = 'product_thumbnail' LIMIT 1",
+            $variation_id
+        ));
+        $row = ['meta_value' => wp_json_encode($media), 'updated_at' => $now];
+        if ($existing) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+            $wpdb->update($table, $row, ['id' => (int) $existing]);
+        } else {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+            $wpdb->insert($table, $row + [
+                'object_id'   => $variation_id,
+                'object_type' => 'product_variant_info',
+                'meta_key'    => 'product_thumbnail',
+                'created_at'  => $now,
+            ]);
+        }
     }
 
     private static function post_status(string $shopify_status, string $mode): string

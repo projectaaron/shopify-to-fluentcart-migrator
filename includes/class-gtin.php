@@ -56,7 +56,7 @@ class Gtin
     {
         $out = ['saved' => 0, 'skipped' => 0, 'errors' => []];
         $rows = array_values(array_filter($rows, function ($r) {
-            return !empty($r['gtin']);
+            return !empty($r['gtin']) || !empty($r['mpn']);
         }));
         if (!$rows) {
             return $out;
@@ -79,10 +79,11 @@ class Gtin
                 $out['skipped']++;
                 continue;
             }
-            if ($gtin === '') {
+            $mpn = sanitize_text_field((string) ($r['mpn'] ?? ''));
+            if ($gtin === '' && $mpn === '') {
                 continue;
             }
-            $clean[] = ['variation_id' => (int) $r['variation_id'], 'gtin' => $gtin, 'mpn' => ''];
+            $clean[] = ['variation_id' => (int) $r['variation_id'], 'gtin' => $gtin, 'mpn' => $mpn];
         }
 
         if (!$clean) {
@@ -93,7 +94,7 @@ class Gtin
         if (is_wp_error($result)) {
             // One duplicate stops the plugin's bulk save; fall back to one at a time.
             foreach ($clean as $row) {
-                $single = call_user_func([$class, 'setVariation'], $product_id, $row['variation_id'], $row['gtin'], '');
+                $single = call_user_func([$class, 'setVariation'], $product_id, $row['variation_id'], $row['gtin'], $row['mpn']);
                 if (is_wp_error($single)) {
                     $out['errors'][] = sprintf('%s: %s', $row['gtin'], $single->get_error_message());
                     $out['skipped']++;

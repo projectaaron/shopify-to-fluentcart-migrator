@@ -21,7 +21,12 @@ class Session
 
     public static function ensure_dir(): string
     {
-        $dir = self::dir();
+        return self::protect_dir(self::dir());
+    }
+
+    /** Create the folder and keep it out of reach of the web server. */
+    private static function protect_dir(string $dir): string
+    {
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
         }
@@ -34,10 +39,14 @@ class Session
         return $dir;
     }
 
-    /** Route wp_handle_upload() into the private folder. */
+    /**
+     * Route wp_handle_upload() into the private folder. Works from the
+     * array it is given: calling wp_upload_dir() here would re-enter this
+     * filter forever.
+     */
     public static function upload_dir_filter(array $dirs): array
     {
-        $dir = self::ensure_dir();
+        $dir = self::protect_dir(trailingslashit($dirs['basedir']) . 's2fc-migrator');
         $dirs['path']   = $dir;
         $dirs['url']    = trailingslashit($dirs['baseurl']) . 's2fc-migrator';
         $dirs['subdir'] = '/s2fc-migrator';

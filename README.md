@@ -1,6 +1,6 @@
 # Shopify to FluentCart Migrator
 
-A free, lightweight WordPress plugin that moves a Shopify product catalog into [FluentCart](https://fluentcart.com/?by=272).
+A free, lightweight WordPress plugin that moves a Shopify product catalog into [FluentCart](https://fluentcart.com/?by=272). Tested against FluentCart 1.6.6 on WordPress 7.1 with a real 35-product export.
 
 **Three steps:** export the CSV from Shopify → upload it → review the list and publish.
 
@@ -21,12 +21,16 @@ Run `bin/build.sh` to produce `shopify-to-fluentcart-migrator.zip`, then upload 
 | Variant Inventory Tracker / Qty / Policy | `manage_stock`, `total_stock`, `available`, `backorders`, stock status |
 | Variant Requires Shipping | Physical or digital fulfillment |
 | Variant Taxable | Tax exempt flag |
-| Image Src / Image Position / Image Alt Text | Media Library attachments; first is the featured image, all go into the FluentCart gallery |
+| Image Src / Image Position / Image Alt Text | Media Library attachments; first is the featured image, all go into the FluentCart gallery. HEIC, TIFF and extension-less files are fetched as JPEG through Shopify's CDN |
+| Variant Image | The variation's own image (`media_id` plus the `product_thumbnail` row FluentCart's admin and cart read) |
+| Variant Packed Length / Width / Height | Dimensions in the variation's `other_info` |
+| Google Shopping / MPN | MPN per variation through Custom Meta Fields |
+| `product.metafields.*` columns | Kept in the product's `_s2fc_shopify_source` meta |
 | Type, Product Category (last segment) | `product-categories` terms |
 | Vendor | `product-brands` term |
 | Tags | `product-tags` when that taxonomy exists, otherwise kept in post meta |
 | Status (active / draft / archived) | publish / draft / private, or everything as draft |
-| Variant Barcode | GTIN per variation through Custom Meta Fields for FluentCart (see below) |
+| Variant Barcode (or *Variant Barcodes*) | GTIN per variation through Custom Meta Fields for FluentCart (see below). Shopify's leading apostrophe is stripped |
 
 Every imported product also carries `_s2fc_shopify_handle` and `_s2fc_shopify_source` (the original handle, vendor, tags, per-variant SKU and barcode, image URLs) so later tools can find what came from where.
 
@@ -36,7 +40,7 @@ FluentCart has no GTIN field and Shopify's *Variant Barcode* is exactly that. Th
 
 ### Not migrated
 
-Orders, customers, discount codes, collections (categories are built from *Type* instead), metafields, subscription products, variant-level images (the product gallery gets them all).
+Orders, customers, discount codes, collections (categories are built from *Type* and *Product Category* instead), subscription products. Newer Shopify exports have no *Variant Inventory Qty* column; those products are imported with stock management off and the screen says so.
 
 ## How it writes to FluentCart
 

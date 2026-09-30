@@ -1,6 +1,6 @@
 # Shopify to FluentCart Migrator
 
-A free, lightweight WordPress plugin that moves a Shopify product catalog into [FluentCart](https://fluentcart.com/?by=272). Tested against FluentCart 1.6.6 on WordPress 7.1 with a real 35-product export.
+A free, lightweight WordPress plugin that moves a Shopify product catalog into [FluentCart](https://fluentcart.com/?by=272). Tested against FluentCart 1.6.6 and 1.7.0 on WordPress 7.1 with a real 35-product export, through the screen in a real browser and through WP-CLI checks of every row it writes.
 
 **Three steps:** export the CSV from Shopify → upload it → review the list and publish.
 
@@ -58,6 +58,14 @@ add_filter('s2fc_detail_row', function (array $row, array $product, array $optio
 add_action('s2fc_product_imported', function (int $post_id, array $product, array $variation_ids, array $options) {}, 10, 4);
 add_filter('s2fc_promos', function (array $items) { return $items; });
 ```
+
+## Security notes
+
+- Every entry point checks a nonce and the capability (`manage_options`, or FluentCart's `products/create` + `products/edit` when FluentCart can answer). Nothing is exposed to logged-out users.
+- The uploaded CSV is stored under a random name in a protected folder and deleted the moment it has been parsed; the parsed products live as JSON Lines in the same folder and are removed on "Start over", on deactivation and on uninstall.
+- Each import session belongs to the user who uploaded the file. One product is imported per request, under a per-handle lock, and a product only carries the handle marker once everything for it is written, so an interrupted request is redone rather than skipped.
+- Images are fetched with `download_url()` (which refuses private hosts) and pass WordPress' file-type checks; the file is verified on disk before it is used.
+- Output is escaped everywhere; SQL goes through `$wpdb->prepare()`; the code passes the WordPress coding-standard security sniffs and PHPCompatibility for PHP 7.4+.
 
 ## Development
 

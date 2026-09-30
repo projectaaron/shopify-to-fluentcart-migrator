@@ -70,4 +70,4 @@ Your host limits upload size. Ask them to raise `upload_max_filesize`, or export
 == Changelog ==
 
 = 1.0.0 =
-* First release.
+* First release. Tested with FluentCart 1.6.6 and 1.7.0 on WordPress 7.1.

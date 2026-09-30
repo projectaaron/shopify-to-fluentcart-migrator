@@ -601,6 +601,12 @@ class Importer
             return $id;
         }
         $id = (int) $id;
+        // Belt and braces: make sure the file really landed in the uploads folder.
+        $stored = get_attached_file($id);
+        if (!$stored || !file_exists($stored)) {
+            wp_delete_attachment($id, true);
+            return new WP_Error('not_saved', __('WordPress accepted the image but the file is missing from the uploads folder. Check that wp-content/uploads is writable.', 'shopify-to-fluentcart-migrator'));
+        }
         if ($alt !== '') {
             update_post_meta($id, '_wp_attachment_image_alt', $alt);
         }

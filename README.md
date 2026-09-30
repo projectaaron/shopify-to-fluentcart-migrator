@@ -42,6 +42,8 @@ FluentCart has no GTIN field and Shopify's *Variant Barcode* is exactly that. Th
 
 Orders, customers, discount codes, collections (categories are built from *Type* and *Product Category* instead), subscription products. Newer Shopify exports have no *Variant Inventory Qty* column; those products are imported with stock management off and the screen says so.
 
+**Run the import as an account you will keep.** Imported images are ordinary Media Library attachments owned by the user who ran the import. If that WordPress user is later deleted without reassigning their content, WordPress deletes the attachments with them.
+
 ## How it writes to FluentCart
 
 FluentCart has no public "create product" PHP API, so the importer writes the rows its own REST controller would write: the `fluent-products` post, one `fct_product_details` row, one `fct_product_variations` row per variant (prices in cents, `other_info` JSON with weight, tax and bundle keys), the `fluent-products-gallery-image` meta and `_thumbnail_id`. Verified against FluentCart 1.6.x. Two filters let you adjust the rows before they are inserted:

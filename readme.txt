@@ -55,6 +55,10 @@ No. It only creates new products. Products already imported from the same Shopif
 
 That is the default so you can look each one over. Choose "Same as Shopify" or "Publish everything now" under Import options.
 
+= My product images disappeared later. =
+
+Run the migration as the WordPress account you intend to keep. WordPress attributes every downloaded image to the user who ran the import, and deleting that user (without attributing their content to someone else) deletes those images along with it. That is standard WordPress behaviour for any upload.
+
 = The upload says the file is too big. =
 
 Your host limits upload size. Ask them to raise `upload_max_filesize`, or export a filtered selection from Shopify in a few batches.

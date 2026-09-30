@@ -103,8 +103,11 @@ class Admin
         if (strpos($hook, S2FC_PAGE) === false) {
             return;
         }
-        wp_enqueue_style('s2fc-admin', S2FC_URL . 'assets/admin.css', [], S2FC_VERSION);
-        wp_enqueue_script('s2fc-admin', S2FC_URL . 'assets/admin.js', [], S2FC_VERSION, true);
+        // Version plus file time: a page cache or CDN never serves stale assets after an update.
+        $css_ver = S2FC_VERSION . '.' . (string) @filemtime(S2FC_DIR . 'assets/admin.css');
+        $js_ver  = S2FC_VERSION . '.' . (string) @filemtime(S2FC_DIR . 'assets/admin.js');
+        wp_enqueue_style('s2fc-admin', S2FC_URL . 'assets/admin.css', [], $css_ver);
+        wp_enqueue_script('s2fc-admin', S2FC_URL . 'assets/admin.js', [], $js_ver, true);
         wp_localize_script('s2fc-admin', 's2fcData', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('s2fc_import'),

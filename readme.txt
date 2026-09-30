@@ -39,6 +39,10 @@ Orders, customers, discount codes, collections as collections (categories are cr
 
 Products already imported from the same Shopify handle are shown as such and skipped by default. A SKU that already exists in FluentCart is detected before you import.
 
+= Links =
+
+Links to FluentCart in this plugin carry upfluent.io's affiliate reference. Buying through them costs you nothing extra and helps fund this free plugin. The plugin is independent and not affiliated with WPManageNinja or Shopify.
+
 == Installation ==
 
 1. Upload the plugin folder to `/wp-content/plugins/` or install it through Plugins → Add New.

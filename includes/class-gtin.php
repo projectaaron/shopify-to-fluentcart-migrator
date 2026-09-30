@@ -62,12 +62,23 @@ class Gtin
             return $out;
         }
 
-        if (!Helpers::meta_fields_active()) {
+        $class = '\FctCustomMeta\ProductIdentifiers';
+        if (!Helpers::meta_fields_active() || !method_exists($class, 'normalizeGtin') || !method_exists($class, 'set') || !method_exists($class, 'setVariation')) {
             $out['skipped'] = count($rows);
             return $out;
         }
 
-        $class = '\FctCustomMeta\ProductIdentifiers';
+        try {
+            return self::save_with($class, $product_id, $rows, $brand, $out);
+        } catch (\Throwable $e) {
+            $out['skipped'] = count($rows);
+            $out['errors'][] = $e->getMessage();
+            return $out;
+        }
+    }
+
+    private static function save_with(string $class, int $product_id, array $rows, string $brand, array $out): array
+    {
 
         // Validate each code with the plugin's own rules so a bad barcode does
         // not block the good ones.

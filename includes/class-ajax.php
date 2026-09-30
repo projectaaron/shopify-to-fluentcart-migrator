@@ -31,26 +31,28 @@ class Ajax
 
     public function upload(): void
     {
-        $this->guard('s2fc_upload');
+        $this->guard('s2fc_upload'); // nonce + capability; phpcs cannot see it from here.
 
         if (!Helpers::fluentcart_ready()) {
-            $this->back(['s2fc_error' => 'no_fluentcart']);
+            $this->back('no_fluentcart');
         }
+        // phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput -- verified in guard(); $_FILES is handled by wp_handle_upload().
         if (empty($_FILES['s2fc_csv']) || !is_array($_FILES['s2fc_csv'])) {
-            $this->back(['s2fc_error' => 'no_file']);
+            $this->back('no_file');
         }
-
-        $file = $_FILES['s2fc_csv']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+        $file = $_FILES['s2fc_csv'];
+        // phpcs:enable
         if (!empty($file['error'])) {
-            $this->back(['s2fc_error' => 'upload_' . (int) $file['error']]);
+            $this->back('upload_' . (int) $file['error']);
         }
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
 
         add_filter('upload_dir', [Session::class, 'upload_dir_filter']);
         $moved = wp_handle_upload($file, [
-            'test_form' => false,
-            'mimes'     => [
+            'test_form'                => false,
+            'unique_filename_callback' => [Session::class, 'random_filename'],
+            'mimes'                    => [
                 'csv' => 'text/csv',
                 'txt' => 'text/plain',
             ],
@@ -61,23 +63,26 @@ class Ajax
             // WordPress often reports CSVs as text/plain or application/vnd.ms-excel; retry without the type check.
             $moved = $this->move_manually($file);
             if (is_wp_error($moved)) {
-                $this->back(['s2fc_error' => 'upload_failed', 's2fc_msg' => rawurlencode($moved->get_error_message())]);
+                $this->back('upload_failed', $moved->get_error_message());
             }
         }
 
+        // The CSV is only needed to parse; nothing reads it afterwards.
         $parsed = Csv_Parser::parse_file($moved['file']);
+        @unlink($moved['file']);
         if (is_wp_error($parsed)) {
-            @unlink($moved['file']);
-            $this->back(['s2fc_error' => 'parse', 's2fc_msg' => rawurlencode($parsed->get_error_message())]);
+            $this->back('parse', $parsed->get_error_message());
         }
 
         $summary = $parsed['summary'];
         $summary['source_name'] = sanitize_file_name($file['name']);
-        $summary['csv_file']    = $moved['file'];
         $summary['options']     = Importer::default_options();
 
-        Session::start($summary, $parsed['products']);
-        $this->back(['s2fc_step' => 'review']);
+        $started = Session::start($summary, $parsed['products']);
+        if (is_wp_error($started)) {
+            $this->back('parse', $started->get_error_message());
+        }
+        $this->back();
     }
 
     /** @return array|\WP_Error ['file' => path] */
@@ -102,15 +107,19 @@ class Ajax
     {
         $this->guard('s2fc_reset');
         Session::clear();
-        $this->back([]);
+        $this->back();
     }
 
     public function import_one(): void
     {
-        if (!Helpers::user_can_migrate()) {
-            wp_send_json_error(['message' => __('Not allowed.', 'shopify-to-fluentcart-migrator')], 403);
+        // A JSON body with a code, not WordPress' bare "-1", so the screen
+        // can tell an expired session apart from a failed product.
+        if (!check_ajax_referer('s2fc_import', 'nonce', false)) {
+            wp_send_json_error(['code' => 'session', 'message' => __('Your session has expired. Reload the page and import again; products already imported are skipped.', 'shopify-to-fluentcart-migrator')], 403);
         }
-        check_ajax_referer('s2fc_import', 'nonce');
+        if (!Helpers::user_can_migrate()) {
+            wp_send_json_error(['code' => 'forbidden', 'message' => __('Not allowed.', 'shopify-to-fluentcart-migrator')], 403);
+        }
 
         $index   = isset($_POST['index']) ? (int) $_POST['index'] : -1;
         $options = isset($_POST['options']) && is_array($_POST['options']) ? wp_unslash($_POST['options']) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
@@ -136,24 +145,42 @@ class Ajax
         wp_send_json_success($result);
     }
 
-    /** Called once after the last product: leaves the results, drops the CSV. */
+    /** Called once after the last product: marks the run finished. */
     public function finish(): void
     {
-        if (!Helpers::user_can_migrate()) {
+        if (!check_ajax_referer('s2fc_import', 'nonce', false) || !Helpers::user_can_migrate()) {
             wp_send_json_error([], 403);
         }
-        check_ajax_referer('s2fc_import', 'nonce');
-        $s = Session::get();
-        if (!empty($s['csv_file']) && file_exists($s['csv_file'])) {
-            @unlink($s['csv_file']);
-        }
-        Session::update(['csv_file' => '', 'finished' => time()]);
+        Session::update(['finished' => time()]);
         wp_send_json_success();
     }
 
-    private function back(array $args): void
+    /**
+     * Redirect back to the screen. An error is parked in a short-lived
+     * transient for the current user rather than in the URL, so nothing
+     * user-controlled is ever reflected from the query string.
+     */
+    private function back(string $error = '', string $detail = ''): void
     {
-        wp_safe_redirect(Helpers::admin_url($args));
+        if ($error !== '') {
+            set_transient(self::flash_key(), ['code' => $error, 'detail' => $detail], 5 * MINUTE_IN_SECONDS);
+        }
+        wp_safe_redirect(Helpers::admin_url());
         exit;
+    }
+
+    public static function flash_key(): string
+    {
+        return 's2fc_flash_' . get_current_user_id();
+    }
+
+    /** Read and clear the parked error, if any. */
+    public static function take_flash(): array
+    {
+        $flash = get_transient(self::flash_key());
+        if ($flash) {
+            delete_transient(self::flash_key());
+        }
+        return is_array($flash) ? $flash : [];
     }
 }

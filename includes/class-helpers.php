@@ -31,7 +31,7 @@ class Helpers
         foreach (['fct_product_details', 'fct_product_variations'] as $table) {
             $name = $wpdb->prefix . $table;
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-            if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $name)) !== $name) {
+            if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($name))) !== $name) {
                 return $ready = false;
             }
         }
@@ -76,9 +76,14 @@ class Helpers
         return false;
     }
 
+    /**
+     * The menu is registered with a capability every FluentCart product
+     * manager has, and the screen itself re-checks user_can_migrate(), so
+     * the link and the page agree on who may use it.
+     */
     public static function menu_capability(): string
     {
-        return 'manage_options';
+        return self::user_can_migrate() ? 'read' : 'manage_options';
     }
 
     /** Dollars string ("12.50") to integer cents. */

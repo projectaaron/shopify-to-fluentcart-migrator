@@ -67,12 +67,13 @@
     var stopAsked  = false;
 
     function visibleRows() { return rows.filter(function (r) { return !r.hidden; }); }
+    /* Every ticked row, filtered or not: what you ticked is what gets imported. */
     function pickedRows() {
-        return visibleRows().filter(function (r) { return $('[data-s2fc-pick]', r).checked; });
+        return rows.filter(function (r) { return $('[data-s2fc-pick]', r).checked; });
     }
     function updateCount() {
         var n = pickedRows().length;
-        countEl.textContent = n ? sprintf('%d selected', n) : '';
+        countEl.textContent = n ? sprintf(i18n.selected || '%d selected', n) : '';
         var vis = visibleRows();
         selectAll.checked = vis.length > 0 && vis.every(function (r) { return $('[data-s2fc-pick]', r).checked; });
     }
@@ -118,6 +119,7 @@
         return o;
     }
 
+    /* Resolves with {status, json} for any HTTP answer; rejects only when the request itself failed. */
     function post(body) {
         var form = new FormData();
         Object.keys(body).forEach(function (k) {
@@ -128,7 +130,13 @@
             }
         });
         return fetch(data.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: form })
-            .then(function (res) { return res.json(); });
+            .then(function (res) {
+                return res.text().then(function (text) {
+                    var json = null;
+                    try { json = JSON.parse(text); } catch (e) { json = null; }
+                    return { status: res.status, json: json, text: text };
+                });
+            });
     }
 
     function renderResult(row, r, ok) {
@@ -165,7 +173,7 @@
     }
 
     function importQueue(queue, opts) {
-        var total = queue.length, done = 0, imported = 0, skipped = 0, failed = 0;
+        var total = queue.length, done = 0, imported = 0, skipped = 0, failed = 0, expired = '';
 
         function tick() {
             if (!queue.length || stopAsked) {
@@ -181,7 +189,25 @@
             function send() {
                 attempt++;
                 post({ action: 's2fc_import_one', nonce: data.nonce, index: row.getAttribute('data-index'), options: opts })
-                    .then(function (res) {
+                    .then(function (r) {
+                        var res = r.json;
+                        /* Expired nonce or lost permission: stop everything, do not retry. */
+                        if (r.status === 403 || r.text === '-1' || r.text === '0') {
+                            var msg = (res && res.data && res.data.message) || i18n.expired || 'Session expired. Reload the page.';
+                            renderResult(row, { message: msg }, false);
+                            failed++;
+                            stopAsked = true;
+                            expired = msg;
+                            step();
+                            return;
+                        }
+                        if (!res || typeof res.success === 'undefined') {
+                            /* HTML error page or empty body: the server may still have created the product, so never re-send. */
+                            failed++;
+                            renderResult(row, { message: sprintf(i18n.serverError || 'Server error (HTTP %d).', r.status) }, false);
+                            step();
+                            return;
+                        }
                         var payload = res.data || {};
                         if (res.success) {
                             if (payload.status === 'skipped') { skipped++; } else { imported++; }
@@ -193,6 +219,7 @@
                         step();
                     })
                     .catch(function () {
+                        /* The request never reached the server (offline, DNS): safe to retry. */
                         if (attempt < 3) {
                             progText.textContent = i18n.network || 'Network error; retrying…';
                             setTimeout(send, 1500 * attempt);
@@ -213,9 +240,9 @@
         }
 
         function finish() {
-            post({ action: 's2fc_finish', nonce: data.nonce }).catch(function () {});
+            if (!expired) { post({ action: 's2fc_finish', nonce: data.nonce }).catch(function () {}); }
             setRunning(false);
-            var msg = stopAsked ? (i18n.stopped || 'Stopped.') + ' ' : '';
+            var msg = expired ? expired + ' ' : (stopAsked ? (i18n.stopped || 'Stopped.') + ' ' : '');
             msg += sprintf(i18n.done || 'Done. %1$d imported, %2$d skipped, %3$d failed.', imported, skipped, failed);
             progText.innerHTML = escapeHtml(msg) + ' <a href="' + escapeHtml(data.productsUrl || '#') + '">' + escapeHtml(i18n.openProducts || 'Open FluentCart products') + '</a>';
             stopAsked = false;

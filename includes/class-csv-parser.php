@@ -17,7 +17,7 @@ use WP_Error;
  */
 class Csv_Parser
 {
-    const MAX_ROWS = 50000;
+    const MAX_ROWS = 20000;
 
     /** Columns we read, keyed by the exact Shopify header. */
     const COLUMNS = [
@@ -103,7 +103,9 @@ class Csv_Parser
         $products = [];
         $order    = [];
         $rows     = 0;
+        $skipped  = 0;
         $has_qty  = isset($map['qty']);
+        $columns  = count($header);
 
         while (($row = fgetcsv($fh, 0, ',', '"', '')) !== false) {
             $rows++;
@@ -118,9 +120,15 @@ class Csv_Parser
             if (count($row) === 1 && trim((string) $row[0]) === '') {
                 continue;
             }
+            if (count($row) > $columns) {
+                $skipped++; // A broken quote somewhere; the row cannot be trusted.
+                continue;
+            }
+            $row = array_map([self::class, 'utf8'], $row);
             $r = self::read_row($row, $map);
             $handle = sanitize_title($r['handle']);
             if ($handle === '') {
+                $skipped++;
                 continue;
             }
 
@@ -173,10 +181,16 @@ class Csv_Parser
         }
 
         $list    = [];
-        $summary = ['products' => 0, 'variants' => 0, 'images' => 0, 'gtin_products' => 0, 'gtin_variants' => 0, 'rows' => $rows, 'has_qty' => $has_qty, 'variant_images' => 0];
+        $summary = ['products' => 0, 'variants' => 0, 'images' => 0, 'gtin_products' => 0, 'gtin_variants' => 0, 'rows' => $rows, 'skipped_rows' => $skipped, 'has_qty' => $has_qty, 'variant_images' => 0, 'duplicate_skus' => []];
+        $sku_seen = [];
         foreach ($order as $handle) {
             $product = self::finish_product($products[$handle]);
             $list[]  = $product;
+            foreach ($product['variants'] as $v) {
+                if ($v['sku'] !== '') {
+                    $sku_seen[$v['sku']] = ($sku_seen[$v['sku']] ?? 0) + 1;
+                }
+            }
             $summary['products']++;
             $summary['variants'] += count($product['variants']);
             $summary['images']   += count($product['images']);
@@ -191,7 +205,31 @@ class Csv_Parser
             }
         }
 
+        $summary['duplicate_skus'] = array_keys(array_filter($sku_seen, function ($n) {
+            return $n > 1;
+        }));
+
         return ['products' => $list, 'summary' => $summary];
+    }
+
+    /**
+     * Shopify exports UTF-8, but a file that went through Excel may come
+     * back as Windows-1252. Convert what is not valid UTF-8 rather than
+     * letting json_encode fail on it later.
+     */
+    private static function utf8($value): string
+    {
+        $value = (string) $value;
+        if ($value === '' || preg_match('//u', $value)) {
+            return $value;
+        }
+        if (function_exists('mb_convert_encoding')) {
+            $converted = @mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
+            if (is_string($converted) && preg_match('//u', $converted)) {
+                return $converted;
+            }
+        }
+        return (string) wp_check_invalid_utf8($value, true);
     }
 
     /** Header name => column index for the columns we know. Case/space tolerant. */
@@ -284,9 +322,11 @@ class Csv_Parser
 
     private static function read_variant(array $r): array
     {
-        $values = array_values(array_filter([$r['opt1_value'], $r['opt2_value'], $r['opt3_value']], function ($v) {
-            return $v !== '';
-        }));
+        // Positional: a blank Option2 on a three-option product stays in place.
+        $values = [$r['opt1_value'], $r['opt2_value'], $r['opt3_value']];
+        while ($values && end($values) === '') {
+            array_pop($values);
+        }
         // Shopify prefixes numeric barcodes with an apostrophe so spreadsheets keep the digits.
         $barcode = preg_replace('/[\s\-\'"’]/u', '', $r['barcode']);
 
@@ -328,7 +368,7 @@ class Csv_Parser
             $variants[] = self::read_variant(array_fill_keys(array_keys(self::COLUMNS), ''));
         }
         $is_simple = count($variants) === 1 && (
-            !$variants[0]['options'] || strtolower($variants[0]['options'][0]) === 'default title'
+            !$variants[0]['options'] || strtolower((string) $variants[0]['options'][0]) === 'default title'
         );
 
         $options = array_values(array_filter($p['options'], function ($o) {
@@ -342,7 +382,7 @@ class Csv_Parser
         $stock      = 0;
         $all_digital = true;
         foreach ($variants as $i => &$v) {
-            $v['title'] = $is_simple ? $title : implode(' / ', $v['options']);
+            $v['title'] = $is_simple ? $title : implode(' / ', array_filter($v['options'], 'strlen'));
             if ($v['barcode'] !== '') {
                 $gtin_count++;
             }

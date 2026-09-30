@@ -69,6 +69,7 @@ check('variable product', $o['is_simple'] === false);
 check('options Size, Color', $o['options'] === ['Size', 'Color']);
 check('3 variants', count($o['variants']) === 3);
 check('variant title joined', $o['variants'][1]['title'] === '5x7 / Natural');
+check('summary has duplicate sku list', is_array($s['duplicate_skus']) && $s['skipped_rows'] === 0);
 check('continue selling', $o['variants'][1]['continue_selling'] === true);
 check('untracked variant', $o['variants'][2]['tracked'] === false);
 check('2 images, ordered', count($o['images']) === 2 && $o['images'][1]['alt'] === 'Second view');

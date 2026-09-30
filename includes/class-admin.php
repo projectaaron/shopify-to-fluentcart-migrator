@@ -72,7 +72,7 @@ class Admin
         foreach ($items as $key => $item) {
             $sorted[$key] = $item;
         }
-        $submenu['fluent-cart'] = $sorted;
+        $submenu['fluent-cart'] = $sorted; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- restoring FluentCart's own order after add_submenu_page() sorted it.
     }
 
     public function action_links($links)
@@ -81,14 +81,15 @@ class Admin
         return $links;
     }
 
+    /** Only on the Plugins screen: the migrator's own page explains itself. */
     public function notices(): void
     {
         if (Helpers::fluentcart_ready() || !current_user_can('activate_plugins')) {
             return;
         }
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-        if ($screen && strpos((string) $screen->id, S2FC_PAGE) !== false) {
-            return; // The page itself explains.
+        if (!$screen || $screen->id !== 'plugins') {
+            return;
         }
         echo '<div class="notice notice-warning"><p>' . wp_kses_post(sprintf(
             /* translators: %s: link to FluentCart */
@@ -114,13 +115,21 @@ class Admin
                 'failed'      => __('Failed', 'shopify-to-fluentcart-migrator'),
                 'edit'        => __('Edit', 'shopify-to-fluentcart-migrator'),
                 'view'        => __('View', 'shopify-to-fluentcart-migrator'),
+                /* translators: 1: imported count, 2: skipped count, 3: failed count */
                 'done'        => __('Done. %1$d imported, %2$d skipped, %3$d failed.', 'shopify-to-fluentcart-migrator'),
+                /* translators: 1: products done so far, 2: total selected */
                 'progress'    => __('%1$d of %2$d', 'shopify-to-fluentcart-migrator'),
                 'none'        => __('Tick at least one product to import.', 'shopify-to-fluentcart-migrator'),
+                /* translators: %d: number of selected products */
                 'confirm'     => __('Import %d products into FluentCart now?', 'shopify-to-fluentcart-migrator'),
+                /* translators: %d: number of selected products */
+                'selected'    => __('%d selected', 'shopify-to-fluentcart-migrator'),
                 'leave'       => __('An import is running. Leave anyway?', 'shopify-to-fluentcart-migrator'),
                 'stopped'     => __('Stopped. Products already imported stay in FluentCart.', 'shopify-to-fluentcart-migrator'),
                 'network'     => __('Network error; retrying…', 'shopify-to-fluentcart-migrator'),
+                'expired'     => __('Your session has expired. Reload the page and import again; products already imported are skipped.', 'shopify-to-fluentcart-migrator'),
+                /* translators: %d: HTTP status code */
+                'serverError' => __('The server returned an error (HTTP %d). Check the PHP error log.', 'shopify-to-fluentcart-migrator'),
                 'openProducts'=> __('Open FluentCart products', 'shopify-to-fluentcart-migrator'),
             ],
             'productsUrl' => admin_url('admin.php?page=fluent-cart#/products'),
@@ -186,11 +195,12 @@ class Admin
 
     private function flash(): void
     {
-        if (empty($_GET['s2fc_error'])) { // phpcs:ignore WordPress.Security.NonceVerification
+        $flash = Ajax::take_flash();
+        if (!$flash) {
             return;
         }
-        $code = sanitize_key(wp_unslash($_GET['s2fc_error'])); // phpcs:ignore WordPress.Security.NonceVerification
-        $msg  = isset($_GET['s2fc_msg']) ? sanitize_text_field(rawurldecode(wp_unslash($_GET['s2fc_msg']))) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+        $code = (string) ($flash['code'] ?? '');
+        $msg  = (string) ($flash['detail'] ?? '');
         $map  = [
             'no_fluentcart' => __('FluentCart is not active.', 'shopify-to-fluentcart-migrator'),
             'no_file'       => __('Choose the CSV file first.', 'shopify-to-fluentcart-migrator'),
@@ -201,7 +211,7 @@ class Admin
             'parse'         => __('The file could not be read.', 'shopify-to-fluentcart-migrator'),
         ];
         $text = $map[$code] ?? __('Something went wrong.', 'shopify-to-fluentcart-migrator');
-        echo '<div class="s2fc-notice s2fc-notice--error"><strong>' . esc_html($text) . '</strong>' . ($msg ? ' ' . esc_html($msg) : '') . '</div>';
+        echo '<div class="s2fc-notice s2fc-notice--error" role="alert"><strong>' . esc_html($text) . '</strong>' . ($msg ? ' ' . esc_html($msg) : '') . '</div>';
     }
 
     private function step_export(): void
@@ -263,6 +273,7 @@ class Admin
             }
         }
         $sku_clash = Importer::existing_skus($skus);
+        $sku_dupes = array_fill_keys((array) ($session['duplicate_skus'] ?? []), true);
         $existing  = Importer::existing_handles(array_column($products, 'handle'));
         $gtin_state = Gtin::state();
         $gtin_products = (int) ($session['gtin_products'] ?? 0);
@@ -291,6 +302,16 @@ class Admin
                 <div class="s2fc-stat"><span class="s2fc-stat__n"><?php echo esc_html(number_format_i18n($gtin_products)); ?></span><span><?php esc_html_e('with barcodes (GTIN)', 'shopify-to-fluentcart-migrator'); ?></span></div>
                 <div class="s2fc-stat s2fc-stat--file"><span class="s2fc-muted"><?php echo esc_html($session['source_name'] ?? ''); ?></span></div>
             </div>
+
+            <?php if (!empty($session['skipped_rows'])) : ?>
+                <div class="s2fc-notice s2fc-notice--warn">
+                    <?php echo esc_html(sprintf(
+                        /* translators: %d: row count */
+                        _n('%d row in the file could not be read and was skipped. If products are missing below, re-export the CSV from Shopify without opening it in a spreadsheet first.', '%d rows in the file could not be read and were skipped. If products are missing below, re-export the CSV from Shopify without opening it in a spreadsheet first.', (int) $session['skipped_rows'], 'shopify-to-fluentcart-migrator'),
+                        (int) $session['skipped_rows']
+                    )); ?>
+                </div>
+            <?php endif; ?>
 
             <?php if (empty($session['has_qty'])) : ?>
                 <div class="s2fc-notice s2fc-notice--info">
@@ -407,7 +428,7 @@ class Admin
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($products as $i => $p) : $this->row($i, $p, $results[$i] ?? null, $sku_clash, $gtin_state, (int) ($existing[$p['handle']] ?? 0), $options['category_source']); endforeach; ?>
+                        <?php foreach ($products as $i => $p) : $this->row($i, $p, $results[$i] ?? null, $sku_clash, $sku_dupes, $gtin_state, (int) ($existing[$p['handle']] ?? 0), $options['category_source']); endforeach; ?>
                     </tbody>
                 </table>
             </div>
@@ -415,7 +436,7 @@ class Admin
         <?php
     }
 
-    private function row(int $i, array $p, $result, array $sku_clash, string $gtin_state, int $existing, string $category_source): void
+    private function row(int $i, array $p, $result, array $sku_clash, array $sku_dupes, string $gtin_state, int $existing, string $category_source): void
     {
         $category_options = [];
         foreach (array_keys(Importer::category_sources()) as $source) {
@@ -468,6 +489,19 @@ class Admin
                 implode(', ', $clashes)
             ));
         }
+        $dupes = [];
+        foreach ($p['variants'] as $v) {
+            if ($v['sku'] !== '' && isset($sku_dupes[$v['sku']])) {
+                $dupes[] = $v['sku'];
+            }
+        }
+        if ($dupes) {
+            $notes[] = esc_html(sprintf(
+                /* translators: %s: SKU list */
+                _n('SKU %s is used by more than one product in this file; only the first keeps it.', 'SKUs %s are used by more than one product in this file; only the first keeps them.', count($dupes), 'shopify-to-fluentcart-migrator'),
+                implode(', ', array_unique($dupes))
+            ));
+        }
         if (!$p['images']) {
             $notes[] = esc_html__('No images', 'shopify-to-fluentcart-migrator');
         }
@@ -504,7 +538,7 @@ class Admin
         ][$p['status']] ?? $p['status'];
 
         $checked = !$existing && !($result && ($result['status'] ?? '') === 'imported');
-        $search  = strtolower($p['title'] . ' ' . $p['vendor'] . ' ' . implode(' ', array_column($p['variants'], 'sku')) . ' ' . $p['handle']);
+        $search  = mb_strtolower($p['title'] . ' ' . $p['vendor'] . ' ' . implode(' ', array_column($p['variants'], 'sku')) . ' ' . $p['handle'], 'UTF-8');
         ?>
         <tr data-s2fc-row data-index="<?php echo esc_attr((string) $i); ?>" data-search="<?php echo esc_attr($search); ?>">
             <td class="s2fc-col-check"><input type="checkbox" data-s2fc-pick <?php checked($checked); ?>></td>

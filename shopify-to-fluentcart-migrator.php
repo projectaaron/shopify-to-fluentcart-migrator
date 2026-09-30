@@ -9,6 +9,8 @@
  * Requires at least: 5.9
  * Requires PHP: 7.4
  * Text Domain: shopify-to-fluentcart-migrator
+ * Domain Path: /languages
+ * Requires Plugins: fluent-cart
  * License:     GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */

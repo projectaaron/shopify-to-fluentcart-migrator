@@ -87,7 +87,7 @@ class Importer
                     return $unit;
                 }
             } catch (\Throwable $e) {
-                // fall through
+                unset($e); // FluentCart not ready to answer; use the default below.
             }
         }
         return 'oz';
@@ -137,7 +137,7 @@ class Importer
         $map = [];
         foreach (array_chunk($handles, 500) as $chunk) {
             $in = implode(',', array_fill(0, count($chunk), '%s'));
-            // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders
+            // phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $in is a list of %s placeholders.
             $rows = $wpdb->get_results($wpdb->prepare(
                 "SELECT pm.meta_value AS handle, pm.post_id FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
                   WHERE pm.meta_key = %s AND p.post_type = %s AND p.post_status <> 'trash' AND pm.meta_value IN ($in)",
@@ -145,6 +145,7 @@ class Importer
                 Helpers::POST_TYPE,
                 ...$chunk
             ));
+            // phpcs:enable
             foreach ((array) $rows as $r) {
                 if (!isset($map[$r->handle])) {
                     $map[$r->handle] = (int) $r->post_id;
@@ -165,7 +166,7 @@ class Importer
         $found = [];
         foreach (array_chunk($skus, 500) as $chunk) {
             $in = implode(',', array_fill(0, count($chunk), '%s'));
-            // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $in is a list of %s placeholders.
             $rows = $wpdb->get_col($wpdb->prepare("SELECT sku FROM {$wpdb->prefix}fct_product_variations WHERE sku IN ($in)", ...$chunk));
             foreach ((array) $rows as $sku) {
                 $found[$sku] = true;
@@ -200,6 +201,28 @@ class Importer
             ];
         }
 
+        // One import per handle at a time: a retried request or a second tab
+        // must not create the same product twice.
+        $lock = 's2fc_lock_' . md5($product['handle']);
+        if (get_transient($lock)) {
+            return new WP_Error('locked', __('This product is already being imported in another request. Wait a moment and try again.', 'shopify-to-fluentcart-migrator'));
+        }
+        set_transient($lock, time(), 5 * MINUTE_IN_SECONDS);
+
+        try {
+            $result = self::write($product, $options);
+        } finally {
+            delete_transient($lock);
+        }
+        return $result;
+    }
+
+    /** The actual write; import() wraps it in the lock. */
+    private static function write(array $product, array $options)
+    {
+        global $wpdb;
+        $warnings = [];
+
         @set_time_limit(180);
 
         // ── Post ──
@@ -218,8 +241,6 @@ class Importer
         if (is_wp_error($post_id)) {
             return $post_id;
         }
-
-        update_post_meta($post_id, Helpers::HANDLE_META, $product['handle']);
 
         // ── Variations ──
         $now      = current_time('mysql', true);
@@ -469,6 +490,9 @@ class Importer
             'imported_at' => time(),
             'migrator'    => S2FC_VERSION,
         ]);
+        // Written last: a product carries the handle only once everything
+        // else is in place, so a request that died halfway is redone, not skipped.
+        update_post_meta($post_id, Helpers::HANDLE_META, $product['handle']);
 
         clean_post_cache($post_id);
         do_action('s2fc_product_imported', $post_id, $product, $variation_ids, $options);
@@ -498,11 +522,12 @@ class Importer
         $wpdb->update($wpdb->prefix . 'fct_product_variations', ['media_id' => $attachment_id, 'updated_at' => $now], ['id' => $variation_id]);
 
         $table = $wpdb->prefix . 'fct_product_meta';
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table is $wpdb->prefix plus a constant.
         $existing = $wpdb->get_var($wpdb->prepare(
             "SELECT id FROM {$table} WHERE object_id = %d AND object_type = 'product_variant_info' AND meta_key = 'product_thumbnail' LIMIT 1",
             $variation_id
         ));
+        // phpcs:enable
         $row = ['meta_value' => wp_json_encode($media), 'updated_at' => $now];
         if ($existing) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery
@@ -591,7 +616,7 @@ class Importer
             $name  = ($ext ? substr($name, 0, -strlen($ext) - 1) : $name) . '.jpg';
         }
 
-        $tmp = download_url($fetch, 60);
+        $tmp = download_url($fetch, 30);
         if (is_wp_error($tmp)) {
             return $tmp;
         }

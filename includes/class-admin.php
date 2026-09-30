@@ -110,6 +110,7 @@ class Admin
             'nonce'   => wp_create_nonce('s2fc_import'),
             'i18n'    => [
                 'importing'   => __('Importing…', 'shopify-to-fluentcart-migrator'),
+                'uploading'   => __('Uploading and reading the file…', 'shopify-to-fluentcart-migrator'),
                 'imported'    => __('Imported', 'shopify-to-fluentcart-migrator'),
                 'skipped'     => __('Skipped', 'shopify-to-fluentcart-migrator'),
                 'failed'      => __('Failed', 'shopify-to-fluentcart-migrator'),

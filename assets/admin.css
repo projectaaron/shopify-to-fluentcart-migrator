@@ -28,6 +28,7 @@
     line-height: 1.5;
     max-width: 1400px;
 }
+.s2fc-app *, .s2fc-app *::before, .s2fc-app *::after { box-sizing: border-box; }
 body.fluent_theme_dark .s2fc-app,
 html.fluent_theme_dark .s2fc-app,
 html.dark .s2fc-app {
@@ -81,6 +82,7 @@ html.dark .s2fc-app {
 
 /* Buttons */
 .s2fc-btn {
+    box-sizing: border-box;
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     padding: 9px 16px; border-radius: var(--s2fc-radius-sm); border: 1px solid var(--s2fc-border);
     background: var(--s2fc-surface); color: var(--s2fc-text); font-weight: 600; font-size: 13px;

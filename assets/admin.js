@@ -45,7 +45,7 @@
         });
         upload.addEventListener('submit', function () {
             btn.disabled = true;
-            btn.textContent = i18n.importing || 'Uploading…';
+            btn.textContent = i18n.uploading || 'Uploading…';
         });
     }
 

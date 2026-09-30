@@ -229,11 +229,24 @@ class Csv_Parser
         return strtolower(preg_replace('/[^a-z0-9]+/i', '', $s));
     }
 
+    /**
+     * Shopify prefixes values that look like numbers (SKUs, barcodes, option
+     * values such as "'0123") with an apostrophe so spreadsheets keep the
+     * leading zeros. It is not part of the value.
+     */
+    private static function unquote(string $value): string
+    {
+        return preg_replace('/^[\'’]+/u', '', $value);
+    }
+
     private static function read_row(array $row, array $map): array
     {
         $r = [];
         foreach (self::COLUMNS as $key => $label) {
             $r[$key] = isset($map[$key], $row[$map[$key]]) ? trim((string) $row[$map[$key]]) : '';
+        }
+        foreach (['sku', 'barcode', 'mpn', 'opt1_value', 'opt2_value', 'opt3_value'] as $key) {
+            $r[$key] = self::unquote($r[$key]);
         }
         $r['metafields'] = [];
         foreach ($map['metafields'] ?? [] as $mkey => $i) {

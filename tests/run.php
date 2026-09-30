@@ -45,10 +45,10 @@ $p = [];
 foreach ($result['products'] as $prod) { $p[$prod['handle']] = $prod; }
 
 echo "Summary: " . json_encode($s) . "\n";
-check('4 products', $s['products'] === 4);
-check('6 variants', $s['variants'] === 6);
+check('5 products', $s['products'] === 5);
+check('7 variants', $s['variants'] === 7);
 check('3 images', $s['images'] === 3);
-check('2 products with GTIN', $s['gtin_products'] === 2);
+check('3 products with GTIN', $s['gtin_products'] === 3);
 
 $w = $p['wife-after-god'];
 check('simple product', $w['is_simple'] === true);
@@ -56,6 +56,7 @@ check('price 1599', $w['variants'][0]['price'] === 1599);
 check('compare 1999', $w['variants'][0]['compare'] === 1999);
 check('cost 325', $w['variants'][0]['cost'] === 325);
 check('barcode kept', $w['variants'][0]['barcode'] === '9780986366741');
+check('sku apostrophe stripped', $p['quoted-sku']['variants'][0]['sku'] === '9780986366999' && $p['quoted-sku']['variants'][0]['barcode'] === '9780986366999');
 check('tracked qty', $w['variants'][0]['tracked'] && $w['variants'][0]['qty'] === 4546);
 check('status active', $w['status'] === 'active');
 check('excerpt from SEO', $w['excerpt'] === 'A 30-day devotional for wives.');

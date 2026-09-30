@@ -518,14 +518,22 @@ class Admin
             ? Helpers::format_money($p['price_min'])
             : Helpers::format_money($p['price_min']) . ' – ' . Helpers::format_money($p['price_max']);
 
-        $variant_text = $p['is_simple']
-            ? esc_html__('Simple', 'shopify-to-fluentcart-migrator')
-            : esc_html(sprintf(
+        if ($p['is_simple']) {
+            $variant_text = esc_html__('Simple', 'shopify-to-fluentcart-migrator');
+        } elseif ($p['options']) {
+            $variant_text = esc_html(sprintf(
                 /* translators: 1: count, 2: option names */
                 __('%1$d (%2$s)', 'shopify-to-fluentcart-migrator'),
                 count($p['variants']),
                 implode(', ', $p['options'])
             ));
+        } else {
+            $variant_text = esc_html(sprintf(
+                /* translators: %d: count */
+                _n('%d variant', '%d variants', count($p['variants']), 'shopify-to-fluentcart-migrator'),
+                count($p['variants'])
+            ));
+        }
 
         $tracked = false;
         foreach ($p['variants'] as $v) {

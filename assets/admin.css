@@ -29,6 +29,8 @@
     max-width: 1400px;
 }
 .s2fc-app *, .s2fc-app *::before, .s2fc-app *::after { box-sizing: border-box; }
+.s2fc-app [hidden] { display: none !important; }
+.s2fc-main { min-width: 0; }
 body.fluent_theme_dark .s2fc-app,
 html.fluent_theme_dark .s2fc-app,
 html.dark .s2fc-app {
@@ -59,7 +61,7 @@ html.dark .s2fc-app {
 .s2fc-inline-form { margin: 0; }
 
 .s2fc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-@media (max-width: 1100px) { .s2fc-layout { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .s2fc-layout { grid-template-columns: minmax(0, 1fr); } }
 
 .s2fc-card {
     background: var(--s2fc-surface);
@@ -139,6 +141,7 @@ html.dark .s2fc-app {
 
 /* Toolbar + progress */
 .s2fc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+@media (max-width: 600px) { .s2fc-toolbar .s2fc-btn--primary { margin-left: 0; width: 100%; } .s2fc-search { max-width: none; } }
 .s2fc-search { flex: 1 1 220px; min-width: 180px; max-width: 360px; padding: 7px 10px; border: 1px solid var(--s2fc-border); border-radius: var(--s2fc-radius-sm); background: var(--s2fc-surface); color: var(--s2fc-text); }
 .s2fc-toolbar .s2fc-btn--primary { margin-left: auto; }
 .s2fc-progress { margin-bottom: 12px; }
